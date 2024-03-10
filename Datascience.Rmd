@@ -1,0 +1,1386 @@
+---
+title: "Analysis of Student Mental Health for Insight and Action"
+author: "Rohini Maram"
+date: "2023-11-24"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(ggplot2)
+library(readr)
+require(rlang)
+require(purrr)
+require(viridisLite)
+require(dplyr)
+library(modelr)
+library(splines)
+library(randomForest)
+library(caret)
+library(e1071)
+library(nnet)
+library(tidyr)
+library(broom)
+library(cowplot)
+library(pROC)
+#tinytex::install_tinytex(version = "2020.10")
+```
+
+
+In this project I plan to work with a dataset called "Students Mental Health Assessments." This dataset contains a range of information about students, including their age, course of study, gender, stress levels, depression scores, anxiety scores, and more. It's a comprehensive dataset that can provide insights into the mental health of students. This dataset is collected from Kaggle.Lateron to get better analysis did choose another dataset as well that information is later on in this report
+
+##Reading Data(Importing Data)
+```{r}
+# Assuming your file is named "students_mental_health_survey.csv"
+file_path <- "students_mental_health_survey.csv"
+
+# Read the CSV file without showing column types
+Student_Data <- read_csv(file_path, show_col_types = FALSE)
+
+# Print information about the data
+print(Student_Data)
+
+# Print the number of rows and columns
+cat("Number of rows:", nrow(Student_Data), "\n")
+cat("Number of columns:", ncol(Student_Data), "\n")
+
+
+```
+
+## Tidying the Data
+# Handle Missing Values
+```{r}
+# Replace empty strings with NA
+Student_Data[Student_Data == ""] <- NA
+
+# Remove rows with missing values
+Student_Data_without_missing_data <- na.omit(Student_Data)
+
+# Check the dimensions of the cleaned data
+dim(Student_Data_without_missing_data)
+
+```
+
+#Printing number of rows and columns after Dropping the missing Data
+
+```{r}
+Student_Data_without_missing_data
+cat("Number of rows:", nrow(Student_Data_without_missing_data ), "\n")
+cat("Number of columns:", ncol(Student_Data_without_missing_data ), "\n")
+```
+
+## Exploring factors influencing stress levels.
+I want to know what are the factors that are effecting the stress levels, so drawn plots stress level against remaining (19)features.
+For easy visualization I choose scatter plots for the continuous variables  and box plot for categorical variables
+```{r}
+# Scatter Plot of Stress Level and CGPA
+scatter_plot_cgpa <- ggplot(Student_Data_without_missing_data, aes(x = CGPA, y = Stress_Level,colour=Course)) +
+  geom_point() +
+  labs(title = "Scatter Plot of Stress Level and CGPA", x = "CGPA", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+polar_scater_plot<-ggplot(Student_Data_without_missing_data, aes(x = CGPA, y = Stress_Level, color = CGPA)) +
+  geom_point() +
+  labs(title = "Polar Scatter Plot of Stress Level by CGPA", x = "CGPA", y = "Stress_Level") +
+  theme(plot.title = element_text(hjust = 0.5)) +  # Center the title
+  coord_polar() +
+  scale_color_viridis_c()
+# Display plot
+print(scatter_plot_cgpa)
+print(polar_scater_plot)
+
+```
+The  plots depicts the relationship between stress level and CGPA, with the CGPA ranging from 2.5 to 4.0 and stress levels on a discrete scale. The plot shows that individuals with similar CGPAs can have varying stress levels, indicating no clear trend between CGPA and stress. Data points are densely populated between CGPAs of 3.0 to 3.5. The absence of a visible pattern suggests that other factors may influence the relationship between stress and academic performance.
+
+```{r}
+#Scatter Plot of Stress Level and Age
+scatter_plot_age <- ggplot(Student_Data_without_missing_data, aes(x = Age, y = Stress_Level)) +
+  geom_point() +
+  labs(title = "Scatter Plot of Stress Level and Age", x = "Age", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+# Display plot
+print(scatter_plot_age)
+```
+
+The scatter plot shows the relationship between stress level and age. Stress level is plotted on the vertical axis, ranging from 0 to 5, and age is on the horizontal axis, ranging from about 20 to 35 years. The plot presents a uniform distribution of stress levels across different ages with no apparent pattern, indicating that within this dataset, age does not seem to significantly affect reported stress levels. Each horizontal line of dots represents all the reported stress levels for a particular age, and every age has a full range of stress levels.
+
+```{r}
+#Scatter Plot of Stress Level and Anxiety Score
+scatter_plot_Anxiety_Score <- ggplot(Student_Data_without_missing_data, aes(x = Anxiety_Score, y = Stress_Level)) +
+  geom_point() +
+  labs(title = "Scatter Plot of Stress Level and Anxiety Score", x = "Anxiety_Score", y = "Stress_Level")+
+theme(plot.title = element_text(hjust = 0.5))  # Center the title
+
+# Display plot
+print(scatter_plot_Anxiety_Score)
+```
+The scatter plot illustrates the relationship between stress level (vertical axis) and anxiety score (horizontal axis), both seemingly rated on a scale from 0 to 5. Similar to the previous plots, there's a uniform distribution with each level of anxiety having a full range of stress levels associated with it. This uniformity indicates no clear correlation between the two variables in the data presented. Each point likely represents an individual's reported stress level at a given anxiety score, and the plot suggests that an individual's stress level can vary widely regardless of their anxiety score.
+
+
+
+```{r}
+#Scatter Plot of Stress Level and Depression Score
+scatter_plot_Depression_Score <- ggplot(Student_Data_without_missing_data, aes(x = Depression_Score, y = Stress_Level)) +
+  geom_point() +
+  labs(title = "Scatter Plot of Stress Level and Depression Score", x = "Depression_Score", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+
+# Display plot
+print(scatter_plot_Depression_Score)
+
+```
+The scatter plot shows the relationship between stress level and depression score, with both variables appearing to be rated on a scale from 0 to 5. The plot displays a uniform distribution of stress levels across the range of depression scores, indicating no clear pattern or correlation within this dataset. Each depression score has associated with it a full span of stress levels, suggesting that stress levels are independent of depression scores in this sample. Each point likely represents an individual's stress level for their respective depression score.
+
+
+```{r}
+# Boxplot of Stress Level by Gender
+boxplot_gender <- ggplot(Student_Data_without_missing_data, aes(x = Gender, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Gender", x = "Gender", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+
+# Display plot
+print(boxplot_gender)
+
+```
+The boxplot compares stress levels between two gender groups: female and male. The stress level, likely on a scale from 0 to 5, is represented on the vertical axis. Both boxplots have a median stress level around 2, indicated by the line within the box. The range of stress levels (interquartile range) for both genders is similar, spanning from about 2 to 4, with the 'whiskers' suggesting that there are individuals who report stress levels slightly outside this range. There are no visible outliers, and the distribution seems quite symmetrical for both genders, suggesting a similar variation in stress levels among females and males within this dataset.
+
+```{r}
+# Boxplot of Stress Level by Course
+boxplot_course <- ggplot(Student_Data_without_missing_data, aes(x = Course, y = Stress_Level, fill = Course)) +
+  geom_boxplot() +
+  labs(title = "Plot of Stress Level by Course", x = "Course", y = "Stress_Level") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+
+# Display the plot
+print(boxplot_course)
+boxplot_course+coord_polar()
+```
+The plot displays stress levels by academic course, with medians around 2 for all fields. Variability in stress is similar for Business, Computer Science, Law, Engineering and Others. The Medical field has a marginally higher median stress level, but overall, the stress level distribution is consistent across courses without any outliers.
+
+
+```{r}
+#Boxplot of Stress level by Sleep Quality
+boxplot_sleep_quality <- ggplot(Student_Data_without_missing_data, aes(x = Sleep_Quality, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Sleep Quality", x = "Sleep_Quality", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+# Display plot
+print(boxplot_sleep_quality)
+```
+The boxplot illustrates stress levels categorized by sleep quality, which is divided into 'Average', 'Good', and 'Poor'. The stress level is consistent across all sleep quality categories with a median around 2. The interquartile ranges are also similar, indicating that the spread of stress levels is relatively uniform regardless of sleep quality. There are no outliers or extreme values, suggesting that within this dataset, perceived sleep quality does not show a distinct impact on stress levels.
+
+
+
+
+```{r}
+#Diet_Quality
+boxplot_Diet_Quality <- ggplot(Student_Data_without_missing_data, aes(x = Diet_Quality, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Diet Quality", x = "Diet_Quality", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+# Display plot
+print(boxplot_Diet_Quality)
+```
+The boxplot shows stress levels in relation to diet quality, categorized as 'Average', 'Good', and 'Poor'. Stress levels are on a scale on the vertical axis, and the median stress level is consistent across all diet categories, situated around the 3 mark. The interquartile ranges, which represent the middle 50% of responses, are similar for all three diet qualities, showing no significant variation in stress levels with diet quality. No outliers are present, indicating a uniform distribution of stress levels across the dietary spectrum in the dataset.
+
+```{r}
+#Boxplot of Stress Level by Social_Support
+boxplot_Social_Support <- ggplot(Student_Data_without_missing_data, aes(x = Social_Support, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Social Support", x = "Social_Support", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+# Display plot
+print(boxplot_Social_Support)
+```
+The boxplot displays stress levels in relation to social support, categorized as 'High', 'Low', and 'Moderate'. The median stress level appears consistent across all categories, near the value of 2. The interquartile ranges are similar, indicating a comparable spread of stress levels regardless of social support level. There are no outliers or extreme values shown, which suggests that within this dataset, the perceived level of social support does not have a distinct impact on the reported stress levels.
+
+```{r}
+#Boxplot of Stress Level by Relationship_Status
+boxplot_Relationship_Status <- ggplot(Student_Data_without_missing_data, aes(x = Relationship_Status, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Relationship Status", x = "Relationship_Status", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+
+
+# Display plot
+print(boxplot_Relationship_Status)
+```
+The boxplot compares stress levels by relationship status: 'In a Relationship', 'Married', and 'Single'. Stress levels are indicated on the vertical axis and all three categories show a median stress level close to 2. The interquartile ranges, representing the middle 50% of data, are similar across the categories, suggesting a comparable spread of stress levels regardless of relationship status. The 'whiskers' of the plot indicate the range of the data within 1.5 times the interquartile range, and they appear to be similar for all groups. There are no outliers indicated, which suggests that there is no significant variation in stress levels that can be attributed to relationship status within this dataset.
+
+
+```{r}
+#Boxplot of Stress Level by Physical_Activity
+boxplot_Physical_Activity <- ggplot(Student_Data_without_missing_data, aes(x = Physical_Activity, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Physical Activity", x = "Physical_Activity", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+# Display plot
+print(boxplot_Physical_Activity)
+
+```
+The boxplot depicts stress levels based on physical activity, categorized as 'High', 'Low', and 'Moderate'. The median stress level for each category is approximately at the 2 mark on the vertical axis. The spread of stress levels, as indicated by the interquartile ranges, is consistent across all levels of physical activity. There are no outliers shown, suggesting a uniform distribution of stress levels within each physical activity group in this dataset.
+
+```{r}
+#Boxplot of Stress Level by Substance_Use
+boxplot_Substance_Use <- ggplot(Student_Data_without_missing_data, aes(x = Substance_Use, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Substance Use", x = "Substance_Use", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+# Display plot
+print(boxplot_Substance_Use)
+```
+The boxplot illustrates stress levels in relation to substance use, categorized as 'Frequently', 'Never', and 'Occasionally'. The median stress level for 'Never' and 'Occasionally' is about the same, while 'Frequently' is slightly higher. The range of stress levels, indicated by the boxes, is broader for those who 'Never' use substances, with 'Frequently' showing the narrowest interquartile range. Notably, there are outliers in the 'Frequently' category, indicating individuals with extremely low stress levels, unlike the other two categories. This suggests some variations in stress levels associated with substance use frequency.
+
+
+```{r}
+#Boxplot of Stress Level by Counseling_Service_Use
+boxplot_Counseling_Service_Use= ggplot(Student_Data_without_missing_data, aes(x = Counseling_Service_Use, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Counseling Service Use", x = "Counseling_Service_Use", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+# Display plot
+print(boxplot_Counseling_Service_Use)
+```
+The boxplot depicts stress levels in relation to the use of counseling services, categorized as 'Frequently', 'Never', and 'Occasionally'. The median stress level is around 2 for those who 'Never' or 'Occasionally' use counseling services, and slightly higher for those who 'Frequently' use them. The interquartile ranges are comparable across all categories, suggesting a similar spread of stress levels irrespective of counseling service usage. The 'whiskers' extend to show the full range of reported stress levels, with no significant outliers present, which indicates a relatively consistent distribution of stress levels across the frequency of counseling service use within this dataset.
+
+
+```{r}
+#Boxplot of Stress Level by Family_History
+boxplot_Family_History <- ggplot(Student_Data_without_missing_data, aes(x = Family_History, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Family History", x = "Family_History", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+# Display plot
+print(boxplot_Family_History)
+
+```
+The boxplot shows stress levels categorized by family history of mental health issues, with 'No' on the left and 'Yes' on the right. The median stress level for those with no family history is around 2.5, and for those with a family history, it is slightly higher, near 3. The interquartile range is slightly wider for those with a family history, indicating a greater spread in stress levels. Both categories have a similar overall range of stress levels, as indicated by the 'whiskers'. There are no significant outliers in either category, suggesting that while there may be a slight difference in median stress levels, the overall distribution is fairly consistent regardless of family history.
+
+```{r}
+#Boxplot of Stress Level by Chronic_Illness
+boxplot_Chronic_Illness <- ggplot(Student_Data_without_missing_data, aes(x = Chronic_Illness, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Chronic Illness", x = "Chronic_Illness", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+# Display plot
+print(boxplot_Chronic_Illness)
+
+```
+The boxplot compares stress levels based on the presence of a chronic illness, with categories 'No' and 'Yes'. Those without a chronic illness have a median stress level slightly above 2, while those with a chronic illness have a median stress level near 3. The interquartile ranges, indicating the middle 50% of data, are similar for both groups, suggesting a comparable variability in stress levels. The 'whiskers' show the full range of stress levels within each category, with no significant outliers. This indicates that while the median stress level is slightly higher for those with a chronic illness, the overall distribution of stress levels is relatively consistent between the two groups.
+
+```{r}
+#Scatter Plot of Stress Level and Financial_Stress
+scatter_Financial_Stress <- ggplot(Student_Data_without_missing_data, aes(x = Financial_Stress, y = Stress_Level)) +
+  geom_point() +
+  labs(title = "Scatter Plot of Stress Level and Financial Stress", x = "Financial_Stress", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+# Display plot
+print(scatter_Financial_Stress)
+```
+The scatter plot illustrates the relationship between stress level and financial stress, with financial stress on the horizontal axis and stress level on the vertical axis, both seemingly rated on a scale from 0 to 5. The plot shows that for each level of financial stress, there is a full range of reported stress levels, suggesting that within this dataset, there is no clear trend indicating that financial stress directly correlates with overall stress level. Individuals report a wide variety of stress levels at each point of financial stress, indicating variability in the impact of financial stress on overall stress levels.
+
+```{r}
+#Boxplot of Stress Level by Extracurricular_Involvement
+boxplot_Extracurricular_Involvement <- ggplot(Student_Data_without_missing_data, aes(x = Extracurricular_Involvement, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Extracurricular Involvement", x = "Extracurricular_Involvement", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+# Display plots
+print(boxplot_Extracurricular_Involvement)
+
+```
+
+The boxplot compares stress levels based on the extent of extracurricular involvement, with categories 'High', 'Low', and 'Moderate'. Two categories have similar median stress levels, around the 2 mark,while High category have median around 3. The 'whiskers' of the plot extend to the full range of reported stress levels within each category, and no outliers are present. This indicates that within this dataset, the level of extracurricular involvement does  show a distinct impact on reported stress levels.
+
+```{r}
+#Scatter Plot of Stress level and Semester_Credit_Load
+scatter_Semester_Credit_Load <- ggplot(Student_Data_without_missing_data, aes(x = Semester_Credit_Load, y = Stress_Level)) +
+  geom_point() +
+  labs(title = "Scatter Plot of Stress level and Semester Credit Load", x = "Semester_Credit_Load", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+# Display plot
+print(scatter_Semester_Credit_Load)
+```
+The scatter plot displays the relationship between stress level and semester credit load. Stress level is on the vertical axis, and semester credit load is on the horizontal axis, ranging from approximately 15 credits. Each dot represents an individual's reported stress level at a particular credit load.The plot shows a uniform distribution across different credit loads, with each level of credit load having a full range of stress levels from 0 to 5. This indicates no clear correlation between the number of credits a student is taking and their reported stress level. Students with low, moderate, and high credit loads report a similar range of stress levels, suggesting that factors other than credit load alone may influence stress levels.
+
+```{r}
+#Boxplot of Stress Level by Extracurricular_Involvement
+boxplot_Residence_Type <- ggplot(Student_Data_without_missing_data, aes(x = Residence_Type, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Residence Type", x = "Residence_Type", y = "Stress_Level")+
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+# Display plots
+print(boxplot_Residence_Type)
+
+```
+
+The boxplot illustrates stress levels among individuals based on their type of residence: 'Off-Campus', 'On-Campus', and 'With Family'. The median stress level for off-campus and on-campus residence types is similar, hovering with family marks 3. The 'Off-Campus' and 'On-Campus' categories have comparable interquartile ranges. The whiskers, which represent the range of the data, extend similarly across all types, and no significant outliers are present. This indicates that residence type do have a major impact on stress levels within this dataset.
+
+
+From the results I observed that these are the factors namely:Course,Substance Use,Counseling service used,Family history,Chronic illness,Extracurricular Involvement,Residence type  effect the stress levels in student (This is based on the dataset I am using ) 
+
+##Data Transformation
+
+
+Using filter() to filter the data so that I will have the data that has only effects the stress levels .
+
+```{r}
+filtered_data <- Student_Data_without_missing_data %>%
+  filter(
+    Substance_Use=="Frequently" |
+    Counseling_Service_Use=="Frequently" |
+    Family_History=="Yes" |
+    Chronic_Illness=="Yes" |
+    Extracurricular_Involvement=="High" |
+    Residence_Type=="With Family"
+  )
+filtered_data 
+```
+I wanted to have the data that only have the specific features but when I used "&" it resulted as 0 rows. so went ahead and used "|" operator so that i will have the data that cummulatively will have the features that I desire to examine.
+filtered_data is the new data that has filtered data
+
+#Arrange the data based on CGPA in descending order
+```{r}
+arranged_data <- arrange(filtered_data, desc(CGPA))
+arranged_data
+
+```
+
+arranged_data is the data that have the CGPA arranged in Descending Order.But it is changing the cgpa values as from the filtered_data, I see that the CGPA varies from 4.00 - 2.60 in filtered_data but in the arranged_data the CGPA varies from 4.00-3.73. 
+
+```{r}
+arranged_data_continuous <- arrange(filtered_data,Course)
+arranged_data_continuous
+```
+
+Even I checked arrange() with continuous variable "Course" even here it is giving the courses only Business and Computer Science. I am not sure what is wrong for now.I tried the way Dr. Swan still unable to get the correct format.
+
+#Arranging columns with select()
+select() pulls out only the named columns. Some datasets come with a huge number of variables, and it can be helpful to only focus on those of immediate interest:
+```{r}
+select(filtered_data, "Course",
+  "Stress_Level",
+  "Substance_Use",
+  "Counseling_Service_Use",
+  "Family_History",
+  "Chronic_Illness",
+  "Extracurricular_Involvement",
+  "Residence_Type"
+)
+```
+Renaming the variables using rename()
+
+```{r}
+rename(filtered_data, Course = Course, Stress_Points = Stress_Level,Credit_Load=Semester_Credit_Load,Counseling_Service =Counseling_Service_Use)
+```
+
+#Adding new variables with mutate()
+```{r}
+mutated_data <- filtered_data %>% mutate(Total_Score = Depression_Score + Anxiety_Score)
+mutated_data
+```
+As after mutating there are 2 rows combined to one so I an going to drop those columns:
+```{r}
+# Drop multiple columns
+After_Deleting_Columns<- select(mutated_data, -Depression_Score,-Anxiety_Score)
+After_Deleting_Columns
+
+```
+##After filtering and mutating visualizing the relation among stresslevel and other factors
+```{r}
+# Explore factors influencing stress levels
+
+# Scatter plot for numerical variables
+facet_grid_plot <- ggplot(data = After_Deleting_Columns) +
+  geom_point(mapping = aes(x = CGPA, y = Stress_Level, color = Course)) +
+  facet_grid(rows = vars(Gender), cols = vars(Course), labeller = label_both)
+
+
+facet_grid<-ggplot(data = Student_Data) +
+  geom_point(mapping = aes(x = CGPA, y = Stress_Level, color = Gender)) +
+  facet_grid(cols = vars(Gender))
+
+
+
+# Boxplot for categorical variables
+boxplot_gender <- ggplot(After_Deleting_Columns, aes(x = Gender, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Gender", x = "Gender", y = "Stress Level")
+
+boxplot_course <- ggplot(After_Deleting_Columns, aes(x = Course, y = Stress_Level)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Stress Level by Course", x = "Course", y = "Stress Level") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Display plots
+print(facet_grid_plot)
+print(facet_grid)
+print(boxplot_gender)
+print(boxplot_course)
+```
+Still I find no difference behaviour of variables.
+
+#Finding Average of CGPA
+```{r}
+# Summarize the data to calculate average CGPA
+avg_cgpa <- After_Deleting_Columns %>% summarize(Avg_CGPA = mean(CGPA, na.rm = TRUE))
+avg_cgpa
+
+```
+The average CGPA in the dataset is approximately 3.49.This suggests a moderate overall academic performance among the students. The CGPA is a key metric reflecting students' academic success.
+
+```{r}
+avg_stress_level <-After_Deleting_Columns%>% summarize(Avg_Stress = mean(Stress_Level, na.rm = TRUE))
+avg_stress_level 
+
+```
+The average stress level in the dataset is around 2.46.This indicates a moderate level of stress among the students.Stress level is an essential metric reflecting the mental well-being of the students.
+
+# Group by Gender and calculate average CGPA
+```{r}
+grouped_data_by_gender_cgpa <- mutated_data %>% group_by(Gender) %>% summarize(Avg_CGPA = mean(CGPA, na.rm = TRUE))
+grouped_data_by_gender_cgpa
+```
+The data suggests a marginal difference in CGPA between female and male students
+
+
+```{r}
+grouped_data_by_gender<- mutated_data %>% group_by(Gender) %>% summarize(Avg_Stress = mean(Stress_Level, na.rm = TRUE))
+grouped_data_by_gender
+```
+The data suggests a small difference in stress levels between female and male students.
+
+
+
+```{r}
+grouped_data_by_Sleep_Quality <- mutated_data %>% group_by(Sleep_Quality) %>% summarize(Avg_Stress = mean(Stress_Level, na.rm = TRUE))
+grouped_data_by_Sleep_Quality
+```
+Students with an "Average" sleep quality have an average stress level of approximately 2.47.
+Those with a "Good" sleep quality have a slightly lower average stress level of around 2.45.
+Students with a "Poor" sleep quality exhibit the lowest average stress level of approximately 2.44
+
+```{r}
+grouped_data_by_Course <- mutated_data %>% group_by(Course) %>% summarize(Avg_Stress = mean(Stress_Level, na.rm = TRUE))
+grouped_data_by_Course
+```
+From the table it is observed that average stress is more for the Medical students
+```{r}
+grouped_data_by_Chronic_Illness <- mutated_data %>% group_by(Chronic_Illness) %>% summarize(Avg_Stress = mean(Stress_Level, na.rm = TRUE))
+grouped_data_by_Chronic_Illness
+```
+
+The students with Chronic_Illness is 0.1 are having more stress level compared to the students that don't have
+
+
+```{r}
+grouped_data_by_Residence_Type <- mutated_data %>% group_by(Residence_Type) %>% summarize(Avg_Stress = mean(Stress_Level, na.rm = TRUE))
+grouped_data_by_Residence_Type
+```
+
+From plots when it is observed it should the Residence_Type of with family have more stress levels but from the average values it is clear that the off-campus and with family students are similar stress level
+
+```{r}
+grouped_data_by_Extracurricular_Involvement <- mutated_data %>% group_by(Extracurricular_Involvement) %>% summarize(Avg_Stress = mean(Stress_Level, na.rm = TRUE))
+grouped_data_by_Extracurricular_Involvement
+```
+
+I am shocked by seeing the average stress values with respect to Extracurricular_Involvement as from the plots it displays that people with high Extracurricular_Involvement has more stress level . I guess as we are seeing the average of stress_level ,the results are differing.
+
+
+```{r}
+grouped_data_by_Substance_Use <- mutated_data %>% group_by(Substance_Use) %>% summarize(Avg_Stress = mean(Stress_Level, na.rm = TRUE))
+grouped_data_by_Substance_Use
+```
+Here there is slight that is by 0.01 is difference between than avg stress level among Substance use
+
+
+
+```{r}
+grouped_data_by_Counseling_Service_Use <- mutated_data %>% group_by(Counseling_Service_Use) %>% summarize(Avg_Stress = mean(Stress_Level, na.rm = TRUE))
+grouped_data_by_Counseling_Service_Use
+```
+Here the students that have frequently used counselling service have 0.1 more average stress level
+```{r}
+grouped_data_by_Family_History <- mutated_data %>% group_by(Family_History) %>% summarize(Avg_Stress = mean(Stress_Level, na.rm = TRUE))
+grouped_data_by_Family_History
+```
+The students with family history have 0.04 more average stress level
+
+```{r}
+mutated_data
+```
+
+##Modeling the Data
+```{r}
+# Create a scatter plot
+scatter_plot <- ggplot(mutated_data, aes(x = CGPA, y = Stress_Level)) +
+  geom_point() +
+  labs(title = "Scatter Plot of Stress Level and CGPA", x = "CGPA", y = "Stress_Level") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Add the linear regression line
+linear_model_plot <- scatter_plot +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Linear Model: Stress Level ~ CGPA")
+
+# Display the plot
+print(linear_model_plot)
+```
+
+
+```{r}
+# Create a scatter plot
+scatter_plot <- ggplot(mutated_data, aes(x = Total_Score, y = Stress_Level)) +
+  geom_point() +
+  labs(title = "Scatter Plot of Stress Level and Total_Score", x = "Total_Score", y = "Stress_Level") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Add the linear regression line
+linear_model_plot <- scatter_plot +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Linear Model: Stress Level ~ Total_Score")
+
+# Display the plot
+print(linear_model_plot)
+```
+```{r}
+# Assuming linear_model is the linear model object
+linear_model <- lm(Stress_Level ~ Total_Score, data = mutated_data)
+
+# Print the summary of the linear model
+summary(linear_model)
+
+```
+From the above outputs  I think lm model is not good for my dataset as there are no features that show linear relationship. As you can see there is sifnificantly low r squred value
+
+##Modeling using Machine Learning
+First using Random Forest to know what are the features are important in my data 
+```{r}
+
+model_rf <- randomForest(Stress_Level ~ ., data = mutated_data)
+importance(model_rf)
+```
+The variable importance scores, measured by IncNodePurity, provide insights into the features contributing significantly to stress levels in the dataset. Notably, CGPA emerges as the most influential, followed by Total_Score and Semester_Credit_Load, suggesting a strong connection between academic performance and stress. Additional impactful factors include age and course type. Interestingly, extracurricular involvement and residence type exhibit moderate importance, emphasizing the multifaceted nature of stress determinants. These insights can guide further exploration and interventions to mitigate stress, particularly among students.
+
+Trying to do boxplot the output of the model
+
+```{r}
+# Assuming you stored your random forest model in a variable called 'rf_model'
+# Extract variable importance
+# Extract variable importance
+#importance_values <- importance(model_rf, type = 1)[, "IncNodePurity"]
+
+# Create a data frame
+#var_importance <- data.frame(
+  #Variable = names(importance_values),
+  #Importance = importance_values
+#)
+
+# Create a bar plot
+
+#ggplot(var_importance, aes(x = reorder(Variable, -Importance), y = Importance)) +
+  #geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  #labs(title = "Variable Importance in Random Forest Model",
+      # x = "Variable",
+     #  y = "Importance") +
+#  theme(axis.text)
+
+
+```
+
+I am getting an Error in importance(model_rf, type = 1)[, "IncNodePurity"] : 
+  subscript out of bounds. Tried multiple ways to resolve it as IncNodePurity is in 0 position but R doesn't consider 0 position when I tried giving 1 it pops up error
+
+##Modeling My data for prediction purposes
+```{r}
+
+# Step 1: Data Splitting
+set.seed(123)
+splitIndex <- createDataPartition(mutated_data$Stress_Level, p = 0.7, list = FALSE)
+train_data <- mutated_data[splitIndex, ]
+test_data <- mutated_data[-splitIndex, ]
+
+# Step 2: Data Preprocessing (apply as needed)
+
+# Step 3: Model Selection (multinomial logistic regression)
+
+multinom_model <- multinom(Stress_Level ~ ., data = train_data)
+
+# Step 4: Model Training (already done within the multinom function)
+
+# Step 5: Model Evaluation
+multinom_predictions <- predict(multinom_model, newdata = test_data)
+
+```
+```{r}
+# Check and set levels for multinom_predictions
+unique_levels_multinom <- unique(multinom_predictions)
+unique_levels_test <- unique(test_data$Stress_Level)
+
+# Identify mismatched levels
+missing_levels <- setdiff(unique_levels_test, unique_levels_multinom)
+extra_levels <- setdiff(unique_levels_multinom, unique_levels_test)
+
+# Remove extra levels from multinom_predictions
+multinom_predictions <- factor(multinom_predictions, levels = unique_levels_multinom)
+
+# Add missing levels to multinom_predictions
+if (length(missing_levels) > 0) {
+  multinom_predictions <- factor(multinom_predictions, levels = c(unique_levels_multinom, missing_levels))
+}
+
+# Remove extra levels from test_data$Stress_Level
+test_data$Stress_Level <- factor(test_data$Stress_Level, levels = unique_levels_test)
+
+# Add missing levels to test_data$Stress_Level
+if (length(extra_levels) > 0) {
+  test_data$Stress_Level <- factor(test_data$Stress_Level, levels = c(unique_levels_test, extra_levels))
+}
+
+# Now run confusionMatrix
+confusionMatrix(multinom_predictions, test_data$Stress_Level)
+
+
+```
+
+
+
+Visualizing the Confusion matrix
+```{r}
+
+# Confusion Matrix
+conf_matrix <- matrix(c(32, 37, 31, 33, 12, 17,
+                        66, 80, 69, 78, 65, 57,
+                        44, 64, 51, 56, 36, 26,
+                        52, 45, 47, 30, 30, 42,
+                        9, 20, 13, 15, 21, 24,
+                        13, 30, 13, 24, 36, 29), nrow = 6, byrow = TRUE)
+
+colnames(conf_matrix) <- c("0", "3", "1", "2", "4", "5")
+rownames(conf_matrix) <- c("0", "3", "1", "2", "4", "5")
+
+# Convert to data frame for ggplot
+conf_df <- as.data.frame(as.table(conf_matrix))
+conf_df$Var1 <- factor(conf_df$Var1, levels = c("0", "3", "1", "2", "4", "5"))
+conf_df$Var2 <- factor(conf_df$Var2, levels = c("0", "3", "1", "2", "4", "5"))
+
+# Plot Confusion Matrix
+ggplot(conf_df, aes(x = Var1, y = Var2, fill = Freq)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "blue") +
+  theme_minimal() +
+  labs(title = "Confusion Matrix", x = "Reference", y = "Prediction")
+
+# Plot Overall Statistics
+overall_stats <- data.frame(
+  Metric = c("Accuracy", "Kappa", "Sensitivity", "Specificity"),
+  Value = c(0.1804, 0.006, 0.14815, 0.88506)  # Replace with actual values
+)
+
+ggplot(overall_stats, aes(x = Metric, y = Value)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  theme_minimal() +
+  labs(title = "Overall Statistics", y = "Value")
+
+
+  
+```
+
+The confusion matrix and statistics suggest that the model has low accuracy (0.1804). Sensitivity, specificity, and other metrics for each class are also provided. The Kappa value is close to zero, indicating poor agreement. McNemar's Test has a very low p-value, suggesting a significant difference between predicted and actual values. Class-specific metrics show varied performance across different stress levels.
+
+
+So i am still working on using other models so that there will be rise in accuracy. I am not sure but tried many ways but couldn't improve it.In future I will try explore other datasets . 
+
+I tried using other dataset from the kaggle:
+#Student Stress Factors: A Comprehensive Analysis(Understanding the Underlying Causes and Their Impact on Today's Students.)
+For this before exploring to my analysis I tried to answer the questions that are published by the auther of the dataset. I felt if i am able to answer those question then that would be helpful in analysing my analysis
+##Reading Data(Importing Data)
+```{r}
+# Assuming your file is named "students_mental_health_survey.csv"
+file_path <- "StressLevelDataset.csv"
+
+# Read the CSV file without showing column types
+Student_Data_2 <- read_csv(file_path, show_col_types = FALSE)
+
+# Print information about the data
+print(Student_Data_2)
+
+# Print the number of rows and columns
+cat("Number of rows:", nrow(Student_Data_2), "\n")
+cat("Number of columns:", ncol(Student_Data_2), "\n")
+
+
+```
+Overview of dataset:
+
+Anxiety : range from 0 to 21, Measure : GAD-7
+Self-esteem : range 0 to 30, Measure: Rosenberg Self Esteem Scale
+Mental Health History : 0 if no mental health history, 1 if mental health history
+Depression : range 0 to 27, Measure: Patient Health Questionnaire (PHQ-9)
+Other features mostly range from 0 to 5 considering 0,1 to be low, 2,3 to be mid, and 4,5 to be high.
+Blood pressure: range 1 to 3 (*There was no direct explanation for this one, I assume 1 is low, 2 is normal, 3 is high)
+Stress level: range 0 to 2 (*Again no explanation, I assume, 0 low level/absent, 1 medium level, 2 high level)
+*Generally lower score is better, but for others it is hard to decide. For example sleep quality, we can have an educated guess if we do some data analysis.
+
+
+//Taken from the kaggle discussion about the dataset as I was short of time tried to learn from the discussion.
+(https://www.kaggle.com/datasets/rxnach/student-stress-factors-a-comprehensive-analysis)
+
+This dataset contains around 20 features that create the most impact on the Stress of a Student. The features are selected scientifically considering 5 major factors, they are Psychological, Physiological, Social, Environmental, and Academic Factors. Some of them are:
+Psychological Factors => 'anxiety_level', 'self_esteem', 'mental_health_history', 'depression',
+Physiological Factors => 'headache', 'blood_pressure', 'sleep_quality', 'breathing_problem
+Environmental Factors => 'noise_level', 'living_conditions', 'safety', 'basic_needs',
+Academic Factors => 'academic_performance', 'study_load', 'teacher_student_relationship', 'future_career_concerns',
+Social Factor => 'social_support', 'peer_pressure', 'extracurricular_activities', 'bullying'
+
+Trying to answer the following questions:
+
+##Descriptive Statistics:
+
+1) How many students are in the dataset?
+```{r}
+number_of_students <- nrow(Student_Data_2)
+
+# Print the result
+print(number_of_students)
+
+```
+
+There are total 1100 students in this dataset.
+
+
+
+2) What is the average anxiety level of students in the dataset?
+
+```{r}
+
+# Replace 'anxiety_level' with the actual column name for anxiety level
+average_anxiety <- mean(Student_Data_2$anxiety_level, na.rm = TRUE)
+
+# Print the result
+print(average_anxiety)
+
+```
+
+
+Average Anxiety level is 11.06
+
+3) How many students have reported a history of mental health issues?
+
+```{r}
+
+# Replace 'mental_health_history' with the actual column name for mental health history
+students_with_mental_health_history <- sum(Student_Data_2$mental_health_history == 1, na.rm = TRUE)
+
+# Print the result
+print(students_with_mental_health_history)
+
+```
+
+542 students have reported a history of mental health issues
+
+
+
+##Psychological Factors:
+
+1) How many students have a self-esteem level below the average?
+
+```{r}
+
+# Replace 'self_esteem' with the actual column name for self-esteem
+self_esteem_average <- mean(Student_Data_2$self_esteem, na.rm = TRUE)
+
+# Count the number of students with self-esteem below the average
+students_below_average_self_esteem <- sum(Student_Data_2$self_esteem < self_esteem_average, na.rm = TRUE)
+
+# Print the result
+print(students_below_average_self_esteem)
+
+```
+
+
+507 students have a self-esteem level below the average?
+
+2) What percentage of students have reported experiencing depression?
+
+```{r}
+
+# Replace 'depression' with the actual column name for depression
+students_with_depression <- sum(Student_Data_2$depression == 1, na.rm = TRUE)
+
+# Total number of students
+total_students <- nrow(Student_Data_2)
+
+# Calculate the percentage
+percentage_with_depression <- (students_with_depression / total_students) * 100
+
+# Print the result
+print(percentage_with_depression)
+
+```
+
+
+3.27 is the percentage of students have reported experiencing depression
+
+
+##Physiological Factors:
+
+1) How many students experience headaches frequently?
+
+```{r}
+students_with_frequent_headaches <- sum(Student_Data_2$headache == 5, na.rm = TRUE)
+
+# Print the result
+print(students_with_frequent_headaches)
+
+```
+
+
+Here the frequency count is taken as 5 . There are 129 students experiencing  headaches frequently.
+
+
+2) What is the average blood pressure reading among the students?
+```{r}
+average_blood_pressure <- mean(Student_Data_2$blood_pressure, na.rm = TRUE)
+# Print the result
+print(average_blood_pressure)
+
+```
+
+Average blood pressure reading among the students is 2.18
+
+3) How many students rate their sleep quality as poor?
+
+```{r}
+# Replace 1 with the value that indicates poor sleep quality in your dataset
+students_with_poor_sleep_quality <- sum(Student_Data_2$sleep_quality == 1, na.rm = TRUE)
+
+# Print the result
+print(students_with_poor_sleep_quality)
+
+```
+
+
+Here I consider 1 as the least sleep quality measure. Students rate their sleep quality as poor are 328
+
+##Environmental Factors:
+
+1) How many students live in conditions with high noise levels?
+
+```{r}
+students_with_high_noise_levels <- sum(Student_Data_2$noise_level == 5, na.rm = TRUE)
+
+# Print the result
+print(students_with_high_noise_levels)
+```
+
+137 Students live in conditions with high noise level
+
+
+
+2) What percentage of students feel unsafe in their living conditions?
+
+```{r}
+# Count the occurrences of students feeling unsafe
+unsafe_students_count <- sum(Student_Data_2$safety == 5, na.rm = TRUE)
+
+# Total number of students
+total_students <- nrow(Student_Data_2)
+
+# Calculate the percentage
+percentage_feeling_unsafe <- (unsafe_students_count / total_students) * 100
+print(percentage_feeling_unsafe)
+
+```
+
+15.54% of students feel unsafe in their living conditions
+
+3) How many students have reported not having their basic needs met?
+```{r}
+unmet_basic_needs_count <- sum(Student_Data_2$basic_needs == 5, na.rm = TRUE)
+
+# Print the result
+print(unmet_basic_needs_count)
+```
+
+189 students have reported not having their basic needs met
+
+
+##Academic Factors:
+
+1) How many students rate their academic performance as below average?
+```{r}
+below_average_performance_count <- sum(Student_Data_2$academic_performance < 2, na.rm = TRUE)
+
+# Print the result
+print(below_average_performance_count)
+
+```
+
+As the academic performance range from 1-5 thought 2 can be considered as average. Students rate their academic performance as below average are 213
+
+
+2) What is the average study load reported by students?
+```{r}
+average_study_load <- mean(Student_Data_2$study_load, na.rm = TRUE)
+
+# Print the result
+print(average_study_load)
+```
+Average study load reported by students is 2.62
+
+
+3) How many students have concerns about their future careers?
+```{r}
+career_concerns_count <- sum(Student_Data_2$future_career_concerns == 3, na.rm = TRUE)
+
+# Print the result
+print(career_concerns_count)
+```
+There are 173 students those concerns about their future career
+
+##Social Factors:
+
+1) How many students feel they have strong social support?
+```{r}
+strong_social_support_count <- sum(Student_Data_2$social_support >= 3, na.rm = TRUE)
+
+# Print the result
+print(strong_social_support_count)
+```
+I considered 3 as the strong social support. So, there are 458 students feel they have strong social support
+
+2) What percentage of students have experienced bullying?
+```{r}
+# Count the occurrences of students experiencing bullying
+bullying_count <- sum(Student_Data_2$bullying == 5, na.rm = TRUE)
+
+# Total number of students
+total_students <- nrow(Student_Data_2)
+
+# Calculate the percentage
+percentage_experiencing_bullying <- (bullying_count / total_students) * 100
+
+# Print the result
+print(percentage_experiencing_bullying)
+```
+Assuming a value of 5 indicates experiencing bullying.15.72% of students have experienced bullying.
+
+
+
+
+3) How many students participate in extracurricular activities?
+```{r}
+extracurricular_participation_count <- sum(Student_Data_2$extracurricular_activities == 1, na.rm = TRUE)
+
+# Print the result
+print(extracurricular_participation_count)
+
+```
+Assuming a value of 1 indicates participation in extracurricular activities,184 students participate in extracurricular activities
+
+##Comparative Analysis:
+
+1) Is there a correlation between anxiety level and academic performance?
+```{r}
+# Calculate the correlation coefficient
+correlation_coefficient <- cor(Student_Data_2$anxiety_level, Student_Data_2$academic_performance, use = "complete.obs")
+
+# Print the result
+print(correlation_coefficient)
+```
+The correlation coefficient of -0.6496011 suggests a moderately strong negative correlation between anxiety levels and academic performance in the dataset.
+
+
+
+2) Do students with poor sleep quality also report higher levels of depression?
+```{r}
+correlation_coefficient <- cor(Student_Data_2$sleep_quality, Student_Data_2$depression, use = "complete.obs")
+
+# Print the result
+print(correlation_coefficient)
+
+ggplot(Student_Data_2, aes(x = sleep_quality, y = depression)) +
+  geom_point(color = "blue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Scatter Plot with Regression Line: Sleep Quality vs. Depression Levels", x = "Sleep Quality", y = "Depression Levels")
+
+```
+The correlation coefficient of -0.69 indicates a moderately strong negative relationship between sleep quality and depression levels. As sleep quality decreases, depression levels tend to increase. This suggests a notable association between these variables in the dataset.
+
+
+
+3) Are students who experience bullying more likely to have a history of mental health issues?
+```{r}
+contingency_table <- table(Student_Data_2$bullying, Student_Data_2$mental_health_history)
+
+contingency_df <- as.data.frame.matrix(contingency_table)
+
+# Rename the columns for better visualization
+colnames(contingency_df) <- c("No Mental Health History", "History of Mental Health Issues")
+
+# Create a stacked bar chart
+ggplot(contingency_df, aes(x = rownames(contingency_df), y = `History of Mental Health Issues`, fill = `No Mental Health History`)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Bullying vs. Mental Health History",
+       x = "Bullying",
+       y = "Count",
+       fill = "Mental Health History") +
+  theme_minimal()
+```
+Performing Chi-square Test
+```{r}
+
+# Perform a chi-squared test for independence
+chi_squared_test <- chisq.test(contingency_table)
+
+# Print the result
+print(chi_squared_test)
+```
+It appears that students who experience bullying are more likely to have a history of mental health issues based on the data it is according to the test bu from the graph I see no such thing.
+
+##General Exploration:
+
+1) Which factor (Psychological, Physiological, Environmental, Academic, Social) has the highest number of students reporting negative experiences or conditions?
+```{r}
+
+# Create a summary variable for each factor
+psychological_sum <- rowSums(Student_Data_2[, c("self_esteem", "mental_health_history", "depression")])
+physiological_sum <- rowSums(Student_Data_2[, c("headache", "blood_pressure", "sleep_quality", "breathing_problem")])
+environmental_sum <- rowSums(Student_Data_2[, c("noise_level", "living_conditions", "safety", "basic_needs")])
+academic_sum <- rowSums(Student_Data_2[, c("academic_performance", "study_load", "teacher_student_relationship", "future_career_concerns")])
+social_sum <- rowSums(Student_Data_2[, c("social_support", "peer_pressure", "extracurricular_activities", "bullying")])
+
+# Create a data frame to store the sums
+sums_data <- data.frame(
+  Factor = c("Psychological", "Physiological", "Environmental", "Academic", "Social"),
+  Total_Count = c(sum(psychological_sum), sum(physiological_sum), sum(environmental_sum), sum(academic_sum), sum(social_sum))
+)
+
+
+ggplot(sums_data, aes(x = Factor, y = Total_Count, fill = Factor)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Total Counts of Negative Experiences or Conditions by Factor",
+       x = "Factor",
+       y = "Total Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Calculate relative proportions
+sums_data$Relative_Proportion <- sums_data$Total_Count / sum(sums_data$Total_Count)
+
+# Print the updated sums_data
+print(sums_data)
+
+# Create a pie chart
+library(ggplot2)
+ggplot(sums_data, aes(x = "", y = Relative_Proportion, fill = Factor)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y") +
+  labs(title = "Relative Proportions of Negative Experiences or Conditions by Factor")
+
+
+```
+Psychological has the highest number of students reporting negative experiences 
+
+
+
+2) Are there any noticeable trends or patterns when comparing different factors?
+```{r}
+# Assuming your_dataset is the name of your dataset
+
+# Create a summary data frame
+sums_data <- data.frame(
+  Factor = c("Psychological", "Physiological", "Environmental", "Academic", "Social"),
+  Total_Count = c(33908, 11114, 11745, 11761, 11001)
+)
+
+# Print the summary data
+print(sums_data)
+
+# Calculate relative proportions
+sums_data$Relative_Proportion <- sums_data$Total_Count / sum(sums_data$Total_Count)
+
+# Print the updated sums_data
+print(sums_data)
+
+# Visualize relative proportions with a pie chart
+library(ggplot2)
+ggplot(sums_data, aes(x = "", y = Relative_Proportion, fill = Factor)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y") +
+  labs(title = "Relative Proportions of Negative Experiences or Conditions by Factor")
+
+# Perform a chi-squared test for independence
+contingency_table <- matrix(sums_data$Total_Count, nrow = 1, byrow = TRUE)
+chi_squared_test <- chisq.test(contingency_table)
+print(chi_squared_test)
+
+
+```
+
+3) Which specific feature within each factor has the most significant impact on student stress, based on the dataset?
+```{r}
+
+# Select relevant columns
+selected_cols <- c("self_esteem", "mental_health_history", "depression", "headache", "blood_pressure", 
+                   "sleep_quality", "breathing_problem", "noise_level", "living_conditions", "safety", 
+                   "basic_needs", "academic_performance", "study_load", "teacher_student_relationship", 
+                   "future_career_concerns", "social_support", "peer_pressure", "extracurricular_activities", 
+                   "bullying", "stress_level")
+
+# Subset the dataset
+subset_data <- Student_Data_2 %>%
+  select(all_of(selected_cols))
+
+# Melt the data for analysis
+melted_data <- subset_data %>%
+  gather(key = "Feature", value = "Value", -stress_level)
+
+# Fit linear models for each feature
+model_results <- lm(stress_level ~ Value * Feature, data = melted_data)
+
+# Summarize model results
+summary_results <- broom::tidy(model_results)
+
+# Plot coefficients and confidence intervals
+ggplot(summary_results, aes(x = term, y = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = estimate - std.error, ymax = estimate + std.error), width = 0.2) +
+  labs(title = "Impact of Features on Stress Level",
+       x = "Feature",
+       y = "Coefficient") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+Using Random Forest to find which factors have more influence
+```{r}
+# Assuming your dataset is named 'your_dataset'
+
+# Load necessary libraries
+library(randomForest)
+library(ggplot2)
+
+# Select relevant columns
+selected_cols <- c("self_esteem", "mental_health_history", "depression", "headache", "blood_pressure", 
+                   "sleep_quality", "breathing_problem", "noise_level", "living_conditions", "safety", 
+                   "basic_needs", "academic_performance", "study_load", "teacher_student_relationship", 
+                   "future_career_concerns", "social_support", "peer_pressure", "extracurricular_activities", 
+                   "bullying", "stress_level")
+
+# Subset the dataset
+subset_data <- Student_Data_2 %>%
+  select(all_of(selected_cols))
+
+# Split the data into training and testing sets
+set.seed(123)  # for reproducibility
+train_indices <- sample(1:nrow(subset_data), 0.8 * nrow(subset_data))
+train_data <- subset_data[train_indices, ]
+test_data <- subset_data[-train_indices, ]
+
+# Fit a random forest model
+rf_model <- randomForest(stress_level ~ ., data = train_data, ntree = 500)
+
+# Print variable importance
+print(rf_model$importance)
+
+```
+I guess this dataset is giving expected results that supports my assumptions.As it shows:Self Esteem, Depression,Heaache,Sleep Quality,Teacher Student Relationship, Extracurrricular Activities and bullying are the factors that affect the stress level
+##Visualizing the factors vs stress 
+```{r}
+
+
+# Select relevant columns
+selected_cols <- c("self_esteem", "mental_health_history", "depression", "headache", "blood_pressure", 
+                   "sleep_quality", "breathing_problem", "noise_level", "living_conditions", "safety", 
+                   "basic_needs", "academic_performance", "study_load", "teacher_student_relationship", 
+                   "future_career_concerns", "social_support", "peer_pressure", "extracurricular_activities", 
+                   "bullying", "stress_level")
+
+# Subset the dataset
+subset_data <- Student_Data_2 %>%
+  select(all_of(selected_cols))
+
+# Function to generate plots with different themes and colors
+generate_plots <- function(col, color) {
+  list(
+    scatter = ggplot(subset_data, aes(x = .data[[col]], y = stress_level, fill = .data[[col]])) +
+      geom_point() +
+      labs(title = paste("Scatter Plot of", col, "against Stress Level"),
+           x = col,
+           y = "Stress Level") +
+      theme_minimal(),
+    
+    boxplot = ggplot(subset_data, aes(x = 1, y = .data[[col]], fill = .data[[col]])) +
+      geom_boxplot() +
+      labs(title = paste("Box Plot of", col),
+           x = NULL,
+           y = col) +
+      theme_minimal(),
+    
+    violin = ggplot(subset_data, aes(x = 1, y = .data[[col]], fill = .data[[col]])) +
+      geom_violin() +
+      labs(title = paste("Violin Plot of", col),
+           x = NULL,
+           y = col) +
+      theme_minimal()
+  )
+}
+
+# Create different types of plots with different colors
+for (i in seq_along(selected_cols)) {
+  col <- selected_cols[i]
+  color <- rainbow(length(selected_cols))[i]
+  plot_list <- generate_plots(col, color)
+  
+  # Save or display the plots
+  lapply(plot_list, print)
+}
+
+
+```
+##Tidying the data
+```{r}
+
+# Replace empty strings with NA
+Student_Data_2[Student_Data_2 == ""] <- NA
+
+# Remove rows with missing values
+Student_Data_without_missing_data_2<- na.omit(Student_Data_2)
+
+# Check the dimensions of the cleaned data
+dim(Student_Data_without_missing_data_2)
+
+```
+ There are no missing values in this dataset
+For the time being I am now drawing LM against stress_level so that there could be good visualization
+
+```{r}
+
+# Select relevant columns
+selected_cols <- c("self_esteem", "mental_health_history", "depression", "headache", "blood_pressure", 
+                   "sleep_quality", "breathing_problem", "noise_level", "living_conditions", "safety", 
+                   "basic_needs", "academic_performance", "study_load", "teacher_student_relationship", 
+                   "future_career_concerns", "social_support", "peer_pressure", "extracurricular_activities", 
+                   "bullying", "stress_level")
+
+# Subset the dataset
+subset_data <-Student_Data_without_missing_data_2%>%
+  select(all_of(selected_cols))
+
+# Create linear regression plots for each feature
+for (col in selected_cols) {
+  if (col != "stress_level") {
+    lm_plot <- ggplot(subset_data, aes(x = .data[[col]], y = stress_level)) +
+      geom_point() +
+      geom_smooth(method = "lm", se = FALSE, color = "blue") +
+      labs(title = paste("Linear Regression Plot of", col, "against Stress Level"),
+           x = col,
+           y = "Stress Level") +
+      theme_minimal()
+    
+    print(lm_plot)
+  }
+}
+
+```
+It could be seen that there is positive lm stress_level against these following featured:Mental Health History,Depression, Headache, Blood Pressure, Breathing Problem, Noise Level, Study Load, Peer Pressure, Extracurricular Activities, Bullying, Future Career Concerns, 
+And these show negative relation: Self esteem, Sleep Quality, Living Conditions, Safety, Basic Needs, Academic Performance, Teacher Student Relationship, Social Support
+
+
+##Modeling
+
+```{r}
+
+# Step 1: Split the data into training, testing, and validation sets
+set.seed(123)  # For reproducibility
+index <- createDataPartition(Student_Data_2$stress_level, p = 0.7, list = FALSE)
+train_data <- Student_Data_2[index, ]
+test_validation_data <- Student_Data_2[-index, ]
+
+# Further split test_validation_data into testing and validation sets
+index_test <- createDataPartition(test_validation_data$stress_level, p = 0.5, list = FALSE)
+test_data <- test_validation_data[index_test, ]
+validation_data <- test_validation_data[-index_test, ]
+
+# Convert stress_level to a factor
+train_data$stress_level <- as.factor(train_data$stress_level)
+test_data$stress_level <- as.factor(test_data$stress_level)
+
+
+# Step 2: Train a machine learning model (Random Forest in this example)
+rf_model <- randomForest(stress_level ~ ., data = train_data)
+
+# Step 3: Make predictions on the testing set
+predictions <- predict(rf_model, newdata = test_data)
+# Check factor levels in the training dataset
+levels_train <- levels(train_data$stress_level)
+
+# Check factor levels in the testing dataset
+levels_test <- levels(test_data$stress_level)
+
+# Compare levels
+print(levels_train)
+print(levels_test)
+
+
+# ... (previous code remains unchanged)
+
+# Step 4: Visualize confusion matrix
+conf_matrix <- confusionMatrix(predictions, test_data$stress_level)
+
+# Extract confusion matrix as a table
+conf_table <- as.table(conf_matrix)
+
+heatmap(conf_table, col = terrain.colors(10), scale = "column",
+        main = "Confusion Matrix", xlab = "Predicted", ylab = "Actual")
+
+# Calculate class accuracies
+class_accuracies <- conf_matrix$byClass
+
+# Convert class_accuracies to a data frame
+class_accuracies <- as.data.frame(class_accuracies)
+
+# Print the column names
+column_names <- names(class_accuracies)
+print(column_names)
+
+# Melt the data for better visualization
+melted_accuracies <- reshape2::melt(class_accuracies)
+
+# Create a bar plot
+ggplot(melted_accuracies, aes(x = variable, y = value, fill = variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Class Accuracies Bar Plot",
+       x = "Metric",
+       y = "Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ 
+
+```
+
+
+Thankfully this model has preety good accuracy of more then 75% . I'm very glad Dr.Swan helped in achieving this goal. From his suggestions I went ahead and did my analysis using other dataset and this dataset supported my assumptions.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
